@@ -57,7 +57,7 @@ void MainWindow::on_StartButton_clicked()
     }
 
     if (DifficultyIndex == 0) {
-        ROW = 9;
+        ROW = 8;
         COL = ROW;
         mines = 10;
     } else if (DifficultyIndex == 1) {
@@ -65,8 +65,8 @@ void MainWindow::on_StartButton_clicked()
         COL = ROW;
         mines = 40;
     } else {
-        ROW = 20;
-        COL = ROW;
+        ROW = 30;
+        COL = 16;
         mines = 60;
     }
 
@@ -416,35 +416,61 @@ void MainWindow::on_LoadButton_clicked()
 void MainWindow::on_RatingButton_clicked() {
     QFile file("rating.json");
     if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось открыть файл рейтинга.");
+        // Если файл не существует, создаем его с пустыми массивами
+        QJsonObject ratingObject;
+        ratingObject["Лёгкая"] = QJsonArray();
+        ratingObject["Средняя"] = QJsonArray();
+        ratingObject["Сложная"] = QJsonArray();
+
+        QJsonDocument doc(ratingObject);
+        file.close();
+        file.open(QIODevice::WriteOnly);
+        file.write(doc.toJson());
+        file.close();
+        QMessageBox::information(this, "Рейтинг", "Рейтинг создан. Попробуйте сыграть и сохранить время.");
         return;
     }
 
     QByteArray data = file.readAll();
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (doc.isNull() || !doc.isArray()) {
+    if (doc.isNull() || !doc.isObject()) {
         QMessageBox::warning(this, "Ошибка", "Некорректный формат файла рейтинга.");
         return;
     }
 
-    QJsonArray ratingsArray = doc.array();
+    QJsonObject ratingsObject = doc.object();
+    QJsonArray easyRatings = ratingsObject["Лёгкая"].toArray();
+    QJsonArray mediumRatings = ratingsObject["Средняя"].toArray();
+    QJsonArray hardRatings = ratingsObject["Сложная"].toArray();
+
     QString ratingsText;
-    for (int i = 0; i < ratingsArray.size(); ++i) {
-        ratingsText += QString("Игра %1: %2 секунд\n").arg(i + 1).arg(ratingsArray[i].toInt());
-    }
+    auto appendRatings = [&ratingsText](const QString& title, const QJsonArray& ratings) {
+        ratingsText += title + ":\n";
+        for (const auto& rating : ratings) {
+            ratingsText += QString("%1 секунд\n").arg(rating.toInt());
+        }
+        ratingsText += "\n";
+    };
+
+    appendRatings("Лёгкая", easyRatings);
+    appendRatings("Средняя", mediumRatings);
+    appendRatings("Сложная", hardRatings);
 
     QMessageBox::information(this, "Рейтинг", ratingsText);
 }
 
-
 void MainWindow::saveElapsedTime() {
     QFile file("rating.json");
     if (!file.open(QIODevice::ReadOnly)) {
+        // Если файл не существует, создаем его с пустыми массивами
+        QJsonObject ratingObject;
+        ratingObject["Лёгкая"] = QJsonArray();
+        ratingObject["Средняя"] = QJsonArray();
+        ratingObject["Сложная"] = QJsonArray();
+
+        QJsonDocument doc(ratingObject);
         file.close();
         file.open(QIODevice::WriteOnly);
-        QJsonArray ratingsArray;
-        ratingsArray.append(elapsedTime);
-        QJsonDocument doc(ratingsArray);
         file.write(doc.toJson());
         file.close();
         return;
@@ -452,12 +478,39 @@ void MainWindow::saveElapsedTime() {
 
     QByteArray data = file.readAll();
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    QJsonArray ratingsArray = doc.array();
-    ratingsArray.append(elapsedTime);
-    file.close();
+    QJsonObject ratingsObject = doc.object();
 
+    QString difficulty;
+    int difficultyIndex = ui->DifficultyComboBox->currentIndex();
+    if (difficultyIndex == 0) {
+        difficulty = "Лёгкая";
+    } else if (difficultyIndex == 1) {
+        difficulty = "Средняя";
+    } else {
+        difficulty = "Сложная";
+    }
+
+    QJsonArray ratingsArray = ratingsObject[difficulty].toArray();
+    ratingsArray.append(elapsedTime);
+
+    // Сортировка массива вручную
+    std::vector<int> tempArray;
+    for (const auto& value : ratingsArray) {
+        tempArray.push_back(value.toInt());
+    }
+    std::sort(tempArray.begin(), tempArray.end());
+
+    // Обновляем ratingsArray с отсортированными значениями
+    ratingsArray = QJsonArray();
+    for (const auto& time : tempArray) {
+        ratingsArray.append(time);
+    }
+
+    ratingsObject[difficulty] = ratingsArray;
+
+    file.close();
     file.open(QIODevice::WriteOnly);
-    QJsonDocument newDoc(ratingsArray);
+    QJsonDocument newDoc(ratingsObject);
     file.write(newDoc.toJson());
     file.close();
 }
